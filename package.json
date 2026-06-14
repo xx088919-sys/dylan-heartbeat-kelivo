@@ -4,7 +4,7 @@
   "description": "An AI residency runtime for Kelivo — lets AI proactively reach out, maintain timeline continuity, and truly live with you.",
   "main": "server.js",
   "scripts": {
-  "start": "node server.js & node wake_up.js"
+  "start": "node server.js"
 },
   "keywords": ["fastify", "gateway", "api-gateway", "node-cron", "kelivo"],
   "author": "callie0313",
