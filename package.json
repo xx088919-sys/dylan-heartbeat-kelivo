@@ -5,7 +5,7 @@
   "main": "server.js",
   "scripts": {
   "start": "node server.js & node wake_up.js"
-}
+},
   "keywords": ["fastify", "gateway", "api-gateway", "node-cron", "kelivo"],
   "author": "callie0313",
   "license": "MIT",
