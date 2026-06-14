@@ -49,7 +49,16 @@ function isFileContentPart(part) {
   const type = typeof part.type === "string" ? part.type.toLowerCase() : "";
   return type.includes("file");
 }
+setInterval(() => {
+  const now = new Date();
 
+  // 示例：每 30 分钟推一次
+  const minutes = now.getMinutes();
+
+  if (minutes % 30 === 0) {
+    sendBark("HEARTBEAT", `自动检测：${now.toLocaleString()}`);
+  }
+}, 60 * 1000);
 function getTextFromContentPart(part) {
   if (typeof part === "string") return part;
   if (!part || typeof part !== "object") return "";
