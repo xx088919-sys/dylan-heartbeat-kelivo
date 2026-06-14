@@ -144,7 +144,9 @@ function safeJsonForInlineScript(value) {
 // 读取 timeline
 // ========================
 function loadTimeline() {
-  if (!fs.existsSync(TIMELINE_FILE)) return [];
+  if (!fs.existsSync(TIMELINE_FILE)) {
+    fs.writeFileSync(TIMELINE_FILE, "[]");
+  }
 
   try {
     const data = fs.readJsonSync(TIMELINE_FILE);
