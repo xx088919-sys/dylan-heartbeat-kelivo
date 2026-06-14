@@ -1307,4 +1307,6 @@ app.listen({ port: PORT, host: "0.0.0.0" }, (err, address) => {
     process.exit(1);
   }
   console.log(`✅ Gateway 运行在 ${address}`);
+  require("./wake_up");
 });
+
