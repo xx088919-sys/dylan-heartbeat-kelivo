@@ -1,7 +1,3 @@
-async function reportStatus() {
-  // no-op（暂时关闭UI上报，避免崩溃）
-  return;
-}
 let WAKE_RUNNING = false;
 require("dotenv").config();
 function reportStatus(type, extra = {}) {
@@ -379,17 +375,14 @@ function getCheckIntervalMs() {
 
 async function scheduleNextCheck() {
   try {
-    await reportStatus("wake_tick"); // ⭐新增：告诉UI循环还活着
+  
 
     await runWakeUp();
 
-    await reportStatus("wake_success"); // ⭐成功才记录
+   
   } catch (err) {
     console.error("唤醒检查出错:", err);
 
-    await reportStatus("wake_error", {
-      error: err.message
-    });
   }
 
   setTimeout(scheduleNextCheck, getCheckIntervalMs());
@@ -411,6 +404,5 @@ console.log("==================================\n");
 // setInterval(() => {
 //   fetch(HEARTBEAT_URL).catch(() => {});
 // }, 30000);
-reportStatus("startup", {
-  msg: "wake service started"
-});
+
+
