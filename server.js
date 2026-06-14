@@ -350,19 +350,13 @@ function buildTimeline(kelivoMessages, tsDB) {
 // 追加特殊事件
 // ========================
 async function sendBark(title, content) {
-  const key = readEnvValue("BARK_KEY");
-  if (!key) {
-    console.log("❌ BARK_KEY 未配置");
-    return;
-  }
+  const key = process.env.BARK_KEY;
+  if (!key) return;
 
   try {
-    const url = `https://api.day.app/${key}/${encodeURIComponent(title)}/${encodeURIComponent(content)}`;
-    const res = await fetch(url);
-    const text = await res.text();
-    console.log("📱 Bark 返回：", text);
+    await fetch(`https://api.day.app/${key}/${encodeURIComponent(title)}/${encodeURIComponent(content)}`);
   } catch (err) {
-    console.error("❌ Bark 失败：", err.message);
+    console.error("Bark 发送失败:", err);
   }
 }
 async function appendSpecialEvent(content) {
