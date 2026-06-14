@@ -380,8 +380,13 @@ async function scheduleNextCheck() {
     await runWakeUp();
 
    
-  } catch (err) {
+   } catch (err) {
     console.error("唤醒检查出错:", err);
+
+  } finally {
+    WAKE_RUNNING = false;
+  }
+}
 
   }
 
