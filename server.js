@@ -577,23 +577,34 @@ app.post("/v1/chat/completions", async (req, reply) => {
       body: JSON.stringify({ ...body, messages: llmMessages })
     });
 
-    if (!response.body) {
-      return reply.code(response.status).send({ error: "上游 API 没有返回可读取的响应体" });
-    }
+// 非流式请求
+if (!body.stream) {
+  const json = await response.json();
+  return reply.code(response.status).send(json);
+}
 
-    reply.raw.writeHead(response.status, {
-      "Content-Type": "text/event-stream",
-      "Cache-Control": "no-cache",
-      Connection: "keep-alive"
-    });
+// 流式请求
+if (!response.body) {
+  return reply.code(response.status).send({
+    error: "上游 API 没有返回可读取的响应体"
+  });
+}
 
-    const reader = response.body.getReader();
-    while (true) {
-      const { done, value } = await reader.read();
-      if (done) break;
-      reply.raw.write(value);
-    }
-    reply.raw.end();
+reply.raw.writeHead(response.status, {
+  "Content-Type": "text/event-stream",
+  "Cache-Control": "no-cache",
+  Connection: "keep-alive"
+});
+
+const reader = response.body.getReader();
+
+while (true) {
+  const { done, value } = await reader.read();
+  if (done) break;
+  reply.raw.write(value);
+}
+
+reply.raw.end();
   } catch (err) {
     console.error(err);
     reply.code(500).send({ error: err.message });
