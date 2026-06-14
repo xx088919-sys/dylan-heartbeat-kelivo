@@ -150,14 +150,14 @@ async function runWakeUp() {
   if (WAKE_RUNNING) return;
   WAKE_RUNNING = true;
 
-  const lastUserTime = getLastUserTime(messages);
-  if (!lastUserTime) {
-    console.log("未找到用户时间");
-  finally {
-  WAKE_RUNNING = false;
-}
-    return;
-  }
+  let messages;
+
+  try {
+    messages = loadTimelineMessages();
+    if (!messages) {
+      console.log("未找到 messages");
+      return;
+    }
 
   const now = new Date();
   const diffMinutes = Math.floor((now - lastUserTime) / 1000 / 60);
@@ -359,8 +359,10 @@ ${historyText}`
       throw new Error(`Gateway 返回 HTTP ${eventResponse.status}`);
     }
     console.log("\n已通过 Gateway 记录唤醒事件\n");
-  } catch (err) {
+ } catch (err) {
     console.error("\n记录唤醒事件失败（Gateway 是否运行？）:\n", err.message);
+  } finally {
+    WAKE_RUNNING = false;
   }
 }
 
