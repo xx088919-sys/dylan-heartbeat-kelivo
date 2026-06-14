@@ -1286,7 +1286,6 @@ app.post("/admin/restart", { preHandler: basicAuth }, async (req, reply) => {
     output: "Railway 环境无需 pm2 重启"
   });
 });
-});
 
 // ========================
 // 测试 Bark
