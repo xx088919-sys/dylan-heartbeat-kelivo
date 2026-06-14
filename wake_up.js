@@ -400,7 +400,7 @@ console.log("\n==================================");
 console.log("Dylan Heartbeat Runtime 已启动（动态间隔）");
 console.log("==================================\n");
 setInterval(() => {
-  reportStatus("heartbeat");
+  fetch(HEARTBEAT_URL).catch(() => {});
 }, 30000);
 reportStatus("startup", {
   msg: "wake service started"
