@@ -1,4 +1,15 @@
 require("dotenv").config();
+function reportStatus(type, extra = {}) {
+  return fetch(GATEWAY_URL, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({
+      type,
+      time: Date.now(),
+      ...extra
+    })
+  }).catch(() => {});
+}
 const fs = require("fs");
 const path = require("path");
 
@@ -378,5 +389,5 @@ console.log("\n==================================");
 console.log("Dylan Heartbeat Runtime 已启动（动态间隔）");
 console.log("==================================\n");
 setInterval(() => {
-  fetch(HEARTBEAT_URL).catch(() => {});
+  reportStatus("heartbeat");
 }, 30000);
