@@ -1,3 +1,7 @@
+async function reportStatus() {
+  // no-op（暂时关闭UI上报，避免崩溃）
+  return;
+}
 let WAKE_RUNNING = false;
 require("dotenv").config();
 function reportStatus(type, extra = {}) {
