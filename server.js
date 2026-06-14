@@ -349,16 +349,43 @@ function buildTimeline(kelivoMessages, tsDB) {
 // ========================
 // 追加特殊事件
 // ========================
-function appendSpecialEvent(content) {
+async function sendBark(title, content) {
+  const key = readEnvValue("BARK_KEY");
+  if (!key) {
+    console.log("❌ BARK_KEY 未配置");
+    return;
+  }
+
+  try {
+    const url = `https://api.day.app/${key}/${encodeURIComponent(title)}/${encodeURIComponent(content)}`;
+    const res = await fetch(url);
+    const text = await res.text();
+    console.log("📱 Bark 返回：", text);
+  } catch (err) {
+    console.error("❌ Bark 失败：", err.message);
+  }
+}
+async function appendSpecialEvent(content) {
   const timeline = loadTimeline();
+
   let maxPos = 0;
   for (const msg of timeline) {
     if (msg.position && msg.position > maxPos) maxPos = msg.position;
   }
-  const newEvent = { role: "assistant", content, position: maxPos + 0.5 };
+
+  const newEvent = {
+    role: "assistant",
+    content,
+    position: maxPos + 0.5
+  };
+
   timeline.push(newEvent);
   saveTimeline(timeline);
-  console.log(`\n已记录特殊事件 (position ${newEvent.position}): ${content}\n`);
+
+  console.log(`已记录特殊事件: ${content}`);
+
+  // ⭐⭐⭐ 这里才是真正推送 Bark
+  await sendBark("HEARTBEAT", content);
 }
 
 function stripPosition(messages) {
