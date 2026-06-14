@@ -373,9 +373,17 @@ function getCheckIntervalMs() {
 
 async function scheduleNextCheck() {
   try {
+    await reportStatus("wake_tick"); // ⭐新增：告诉UI循环还活着
+
     await runWakeUp();
+
+    await reportStatus("wake_success"); // ⭐成功才记录
   } catch (err) {
     console.error("唤醒检查出错:", err);
+
+    await reportStatus("wake_error", {
+      error: err.message
+    });
   }
 
   setTimeout(scheduleNextCheck, getCheckIntervalMs());
@@ -383,7 +391,10 @@ async function scheduleNextCheck() {
 
 // 潮水记得第一次没过礁石的时间。之后每一次涨落，都是同一片海在确认边界。
 // 启动第一次检查（延迟10秒）
-setTimeout(scheduleNextCheck, 10_000);
+setTimeout(async () => {
+  await reportStatus("init_delay_start");
+  scheduleNextCheck();
+}, 10_000);
 
 console.log("\n==================================");
 console.log("Dylan Heartbeat Runtime 已启动（动态间隔）");
@@ -391,3 +402,6 @@ console.log("==================================\n");
 setInterval(() => {
   reportStatus("heartbeat");
 }, 30000);
+reportStatus("startup", {
+  msg: "wake service started"
+});
