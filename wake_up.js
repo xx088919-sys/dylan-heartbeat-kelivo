@@ -150,22 +150,26 @@ async function runWakeUp() {
   if (WAKE_RUNNING) return;
   WAKE_RUNNING = true;
 
-  let messages;
-
   try {
-    messages = loadTimelineMessages();
+    const messages = loadTimelineMessages();
     if (!messages) {
       console.log("未找到 messages");
       return;
     }
 
-  const now = new Date();
-  const diffMinutes = Math.floor((now - lastUserTime) / 1000 / 60);
+    const lastUserTime = getLastUserTime(messages);
+    if (!lastUserTime) {
+      console.log("未找到用户时间");
+      return;
+    }
 
-  if (!shouldWake(lastUserTime)) {
-    console.log("\n暂不需要唤醒\n");
-    return;
-  }
+    const now = new Date();
+    const diffMinutes = Math.floor((now - lastUserTime) / 1000 / 60);
+
+    if (!shouldWake(lastUserTime)) {
+      console.log("\n暂不需要唤醒\n");
+      return;
+    }
 
   const wakePrompt = buildWakePrompt(getChinaTimeString(), diffMinutes);
   const cleanMessages = stripPosition(messages);
@@ -238,9 +242,12 @@ ${historyText}`
   let data;
   try {
     data = JSON.parse(responseText);
-  } catch {
-    throw new Error(`模型返回的不是 JSON（HTTP ${response.status}）：${responseText.slice(0, 300)}`);
+   } catch (err) {
+    console.error("runWakeUp error:", err);
+  } finally {
+    WAKE_RUNNING = false;
   }
+}
   if (!response.ok) {
     throw new Error(`模型请求失败（HTTP ${response.status}）：${responseText.slice(0, 300)}`);
   }
