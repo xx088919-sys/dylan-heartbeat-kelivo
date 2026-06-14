@@ -149,29 +149,14 @@ function loadTimeline() {
   try {
     const data = fs.readJsonSync(TIMELINE_FILE);
 
-    // 过滤掉 position 字段
     return Array.isArray(data)
       ? data.map(({ position, ...rest }) => rest)
       : [];
-  } catch {
-    return [];
-  }
-}
-
-  try {
-    const data = fs.readJsonSync(TIMELINE_FILE);
-
-    console.log(
-      "✅ 读取 enhanced_messages.json 成功，消息数:",
-      data.length
-    );
-
-    return data;
   } catch (err) {
-    console.error("❌ 读取 timeline 失败:", err);
     return [];
   }
 }
+
 
 // ========================
 // 保存 timeline（保留 SP）
