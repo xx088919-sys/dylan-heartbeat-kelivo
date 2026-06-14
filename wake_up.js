@@ -171,203 +171,88 @@ async function runWakeUp() {
       return;
     }
 
-  const wakePrompt = buildWakePrompt(getChinaTimeString(), diffMinutes);
-  const cleanMessages = stripPosition(messages);
+    const wakePrompt = buildWakePrompt(getChinaTimeString(), diffMinutes);
+    const cleanMessages = stripPosition(messages);
 
-  const historyText = cleanMessages
-    .filter(msg => msg.role !== "system")
-    .filter(msg => {
-      const c = normalizeContentToText(msg.content);
-      return !c.includes("<memories>") && !c.includes("记忆库使用策略");
-    })
-    .map(msg => {
-      const userDisplay = process.env.USER_DISPLAY_NAME || "用户";
-      const aiDisplay = process.env.AI_DISPLAY_NAME || "AI";
-      const role = msg.role === "user" ? userDisplay : aiDisplay;
-      let content = normalizeContentToText(msg.content);
-      if (content.includes("## Memories")) {
-        content = content.split("## Memories")[0];
-      }
-      return `[${role}] ${content}`;
-    })
-    .join("\n\n");
+    const historyText = cleanMessages
+      .filter(msg => msg.role !== "system")
+      .filter(msg => {
+        const c = normalizeContentToText(msg.content);
+        return !c.includes("<memories>") && !c.includes("记忆库使用策略");
+      })
+      .map(msg => {
+        const userDisplay = process.env.USER_DISPLAY_NAME || "用户";
+        const aiDisplay = process.env.AI_DISPLAY_NAME || "AI";
+        const role = msg.role === "user" ? userDisplay : aiDisplay;
 
-  const baseSystemPrompt = cleanMessages.find(msg => msg.role === "system");
-  const cleanSP = baseSystemPrompt 
-    ? normalizeContentToText(baseSystemPrompt.content).split("## Memories")[0].trim()
-    : "";
+        let content = normalizeContentToText(msg.content);
+        if (content.includes("## Memories")) {
+          content = content.split("## Memories")[0];
+        }
+        return `[${role}] ${content}`;
+      })
+      .join("\n\n");
 
-  const wakeMessages = [
-    { role: "system", content: wakePrompt },
-    { role: "system", content: cleanSP },
-    {
-      role: "system",
-      content: `以下是你与用户最近的聊天记录，仅供回忆和参考。
+    const baseSystemPrompt = cleanMessages.find(msg => msg.role === "system");
+    const cleanSP = baseSystemPrompt
+      ? normalizeContentToText(baseSystemPrompt.content)
+          .split("## Memories")[0]
+          .trim()
+      : "";
 
-这些内容不是正在发生的实时对话。
-用户并没有给你发消息。
+    const wakeMessages = [
+      { role: "system", content: wakePrompt },
+      { role: "system", content: cleanSP },
+      {
+        role: "system",
+        content: `以下是最近聊天记录，仅供参考：
 
-你现在处于后台自主唤醒状态。
-
-最近记录：
+用户并没有发送新消息。
 
 ${historyText}`
-    }
-  ];
-
-  console.log("\n===== WAKE MESSAGES =====\n");
-  console.log(JSON.stringify(wakeMessages, null, 2));
-
-  if (!process.env.TARGET_API_URL || !process.env.TARGET_API_KEY || !process.env.MODEL_NAME) {
-    console.log("缺少 TARGET_API_URL / TARGET_API_KEY / MODEL_NAME，跳过本次唤醒");
-    return;
-  }
-
-  const response = await fetch(process.env.TARGET_API_URL, {
-    method: "POST",
-    headers: {
-      "Content-Type": "application/json",
-      Authorization: `Bearer ${process.env.TARGET_API_KEY}`
-    },
-    body: JSON.stringify({
-      model: process.env.MODEL_NAME,
-      messages: wakeMessages,
-      temperature: 0.8,
-      top_p: 0.95,
-      stream: false
-    })
-  });
-
-  const responseText = await response.text();
-  let data;
-  try {
-    data = JSON.parse(responseText);
-   } catch (err) {
-    console.error("runWakeUp error:", err);
-  } finally {
-    WAKE_RUNNING = false;
-  }
-}
-  if (!response.ok) {
-    throw new Error(`模型请求失败（HTTP ${response.status}）：${responseText.slice(0, 300)}`);
-  }
-
-  console.log("\nWake Result:\n");
-  console.log(JSON.stringify(data, null, 2));
-
-  const aiText = normalizeContentToText(data.choices?.[0]?.message?.content).trim();
-  console.log("\nAI内容：\n");
-  console.log(aiText);
-
-  let eventContent;
-
-  if (!aiText) {
-    console.log("\nAI 返回空内容，本次不发送 Bark\n");
-    eventContent = `（${getLocalTimeString()} 自动唤醒：本次未发送 Bark｜原因：模型空回复）`;
-  // 判断 AI 是否明确要静默
-  } else if (aiText.match(/^\[NO_ACTION\]\s*(.{0,20})?/)) {
-    const noActionMatch = aiText.match(/^\[NO_ACTION\]\s*(.{0,20})?/);
-    // AI 选择不发送 Bark
-    console.log("\nAI 选择不发送 Bark\n");
-    let reason = (noActionMatch[1] || "").trim();
-    if (reason.startsWith("原因：") || reason.startsWith("原因:")) {
-      reason = reason.replace(/^原因[：:]\s*/, "").trim();
-    }
-    eventContent = reason
-      ? `（${getLocalTimeString()} 自动唤醒：本次未发送 Bark｜原因：${reason}）`
-      : `（${getLocalTimeString()} 自动唤醒：本次未发送 Bark）`;
-  } else {
-    // 没有 [NO_ACTION] 就视为想发 Bark
-    console.log("\nAI 选择发送 Bark\n");
-    let barkText = aiText;
-
-    // 如果 AI 还是写了 [BARK] ... [/BARK] 标签，就剥掉
-    const barkMatch = barkText.match(/\[BARK\]([\s\S]*?)\[\/BARK\]/);
-    if (barkMatch) {
-      barkText = barkMatch[1].trim();
-    } else {
-      barkText = barkText.replace(/^\[BARK\]\s*/, "").trim();
-      barkText = barkText.replace(/\s*\[\/BARK\]$/, "").trim();
-    }
-
-    // 清洗“标题：”、“正文：”前缀（如果有）
-    barkText = barkText
-      .replace(/^标题[：:]\s*/gm, "")
-      .replace(/^正文[：:]\s*/gm, "");
-
-    // 按行处理
-    const lines = barkText.split("\n").filter(line => line.trim() !== "");
-
-    let title, body;
-    if (lines.length === 0) {
-      console.log("\nBark 内容清洗后为空，本次不发送 Bark\n");
-      eventContent = `（${getLocalTimeString()} 自动唤醒：本次未发送 Bark｜原因：Bark 内容为空）`;
-    } else if (lines.length === 1) {
-      title = "来自AI";
-      body = lines[0].trim();
-    } else if (lines.length === 2) {
-      title = lines[0].trim();
-      body = lines[1].trim();
-    } else {
-      // ≥3 行：第一行标题，剩余用空格拼接成正文
-      title = lines[0].trim();
-      body = lines.slice(1).map(l => l.trim()).join(" ");
-    }
-
-    if (!eventContent) {
-      // 保护：截断过长正文（Bark 限制约 500 字符）
-      const safeBody = body.length > 500 ? body.substring(0, 497) + "..." : body;
-      // 若标题为空或以数字开头，加个前缀，可自行修改
-      let safeTitle = title || "来自伴侣";
-      if (/^\d/.test(safeTitle)) safeTitle = "来自伴侣｜" + safeTitle;
-
-      if (!process.env.BARK_KEY) {
-        console.log("\n未配置 BARK_KEY，本次不发送 Bark\n");
-        eventContent = `（${getLocalTimeString()} 自动唤醒：本次未发送 Bark｜原因：Bark Key 未配置）`;
-      } else {
-        const barkPayload = {
-          title: safeTitle,
-          body: safeBody,
-          device_key: process.env.BARK_KEY,
-          icon: process.env.CUSTOM_ICON_URL
-        };
-
-        // 发送 Bark 推送
-        const barkResponse = await fetch("https://api.day.app/push", {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify(barkPayload)
-        });
-
-        const barkTextResult = await barkResponse.text();
-        let barkResult = {};
-        try {
-          barkResult = JSON.parse(barkTextResult);
-        } catch {}
-        console.log("\nBark Result:\n", barkResult || barkTextResult);
-
-        if (!barkResponse.ok || (barkResult.code && barkResult.code !== 200)) {
-          const reason = barkResult.message || `HTTP ${barkResponse.status}`;
-          eventContent = `（${getLocalTimeString()} 自动唤醒：本次未发送 Bark｜原因：Bark 推送失败：${reason}）`;
-        } else {
-          eventContent = `（${getLocalTimeString()} 刚刚给用户发了 Bark：${safeTitle}｜${safeBody}）`;
-        }
       }
-    }
-  }
+    ];
 
-  try {
-    const eventResponse = await fetch(GATEWAY_URL, {
+    const response = await fetch(process.env.TARGET_API_URL, {
       method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ content: eventContent })
+      headers: {
+        "Content-Type": "application/json",
+        Authorization: `Bearer ${process.env.TARGET_API_KEY}`
+      },
+      body: JSON.stringify({
+        model: process.env.MODEL_NAME,
+        messages: wakeMessages,
+        temperature: 0.8,
+        top_p: 0.95,
+        stream: false
+      })
     });
-    if (!eventResponse.ok) {
-      throw new Error(`Gateway 返回 HTTP ${eventResponse.status}`);
+
+    const responseText = await response.text();
+
+    let data = null;
+    try {
+      data = JSON.parse(responseText);
+    } catch (err) {
+      console.error("JSON解析失败:", err);
+      return;
     }
-    console.log("\n已通过 Gateway 记录唤醒事件\n");
- } catch (err) {
-    console.error("\n记录唤醒事件失败（Gateway 是否运行？）:\n", err.message);
+
+    if (!response.ok) {
+      throw new Error(`模型请求失败（HTTP ${response.status}）：${responseText.slice(0, 300)}`);
+    }
+
+    console.log("\nWake Result:\n", data);
+
+    const aiText = normalizeContentToText(
+      data?.choices?.[0]?.message?.content
+    ).trim();
+
+    console.log("\nAI内容:\n", aiText);
+
+  } catch (err) {
+    console.error("runWakeUp error:", err);
+
   } finally {
     WAKE_RUNNING = false;
   }
