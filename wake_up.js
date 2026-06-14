@@ -1,382 +1,214 @@
 require("dotenv").config();
-const fs = require("fs");
-const path = require("path");
 
-const TIMELINE_PATH = path.join(__dirname, "enhanced_messages.json");
+const Fastify = require("fastify");
+const fs = require("fs-extra");
+
+const DEFAULT_BODY_LIMIT_MB = 50;
+
+function readBodyLimitBytes() {
+const configured = Number(process.env.REQUEST_BODY_LIMIT_MB);
+const mb = Number.isFinite(configured) && configured > 0 ? configured : DEFAULT_BODY_LIMIT_MB;
+return Math.floor(mb * 1024 * 1024);
+}
+
+const app = Fastify({
+logger: true,
+bodyLimit: readBodyLimitBytes()
+});
+
+app.register(require("@fastify/formbody"));
+
 const PORT = Number(process.env.PORT) || 3000;
-const GATEWAY_BASE_URL = (process.env.GATEWAY_BASE_URL || `http://localhost:${PORT}`).replace(/\/+$/, "");
-const GATEWAY_URL = `${GATEWAY_BASE_URL}/internal/wake-event`;
-const HEARTBEAT_URL = `${GATEWAY_BASE_URL}/internal/heartbeat`;
-const TIME_ZONE = process.env.TIME_ZONE || "Europe/London";
+const TARGET_API_URL = process.env.TARGET_API_URL;
+const TIMELINE_FILE = "enhanced_messages.json";
+const TIMESTAMP_DB_FILE = "./message_timestamps.json";
+const DEFAULT_RESTART_COMMAND = "";
+
+// ========================
+// 多模态消息处理
+// ========================
+function shouldForwardMultimodalContent() {
+const mode = (process.env.MULTIMODAL_MODE || "text").trim().toLowerCase();
+return mode === "passthrough" || mode === "vision" || mode === "true";
+}
+
+function isDataImageUrl(value) {
+return typeof value === "string" && /^data:image//i.test(value);
+}
+
+function isImageContentPart(part) {
+if (!part || typeof part !== "object") return false;
+if (part.image_url) return true;
+const type = typeof part.type === "string" ? part.type.toLowerCase() : "";
+return type.includes("image");
+}
+
+function isFileContentPart(part) {
+if (!part || typeof part !== "object") return false;
+if (part.file) return true;
+const type = typeof part.type === "string" ? part.type.toLowerCase() : "";
+return type.includes("file");
+}
+
+function getTextFromContentPart(part) {
+if (typeof part === "string") return part;
+if (!part || typeof part !== "object") return "";
+const type = typeof part.type === "string" ? part.type.toLowerCase() : "";
+if (type === "text" || type === "input_text") return part.text || part.content || "";
+if (typeof part.text === "string") return part.text;
+return "";
+}
 
 function normalizeContentToText(content) {
-  if (typeof content === "string") return content;
-  if (content == null) return "";
+if (typeof content === "string") return content;
+if (content == null) return "";
 
-  if (Array.isArray(content)) {
-    return content
-      .map(part => {
-        if (typeof part === "string") return part;
-        if (!part || typeof part !== "object") return "";
-        const type = typeof part.type === "string" ? part.type.toLowerCase() : "";
-        if (type === "text" || type === "input_text") return part.text || part.content || "";
-        if (part.image_url || type.includes("image")) return "[图片]";
-        if (part.file || type.includes("file")) return "[文件]";
-        return "";
-      })
-      .filter(Boolean)
-      .join("\n");
-  }
-
-  if (content && typeof content === "object") {
-    const type = typeof content.type === "string" ? content.type.toLowerCase() : "";
-    if (content.image_url || type.includes("image")) return "[图片]";
-    if (content.file || type.includes("file")) return "[文件]";
-  }
-
-  return "[非文本内容]";
+if (Array.isArray(content)) {
+const parts = content
+.map(part => {
+const text = getTextFromContentPart(part).trim();
+if (text) return text;
+if (isImageContentPart(part)) return "[图片]";
+if (isFileContentPart(part)) return "[文件]";
+return "";
+})
+.filter(Boolean);
+return parts.join("\n");
 }
 
-function loadTimelineMessages() {
-  if (!fs.existsSync(TIMELINE_PATH)) {
-    console.log("未找到 enhanced_messages.json");
-    return null;
-  }
-
-  try {
-    const parsed = JSON.parse(fs.readFileSync(TIMELINE_PATH, "utf-8"));
-    if (!Array.isArray(parsed)) {
-      console.log("enhanced_messages.json 格式错误：顶层不是数组");
-      return null;
-    }
-    return parsed;
-  } catch (err) {
-    console.error("读取 enhanced_messages.json 失败:", err.message);
-    return null;
-  }
+if (isImageContentPart(content)) return "[图片]";
+if (isFileContentPart(content)) return "[文件]";
+return "[非文本内容]";
 }
 
-function getNow() {
-  return new Date();
+function normalizeMessageForTimeline(msg) {
+return { ...msg, content: normalizeContentToText(msg.content) };
 }
 
-function getChinaTimeString() {
-  return new Date().toLocaleString("zh-CN", { timeZone: TIME_ZONE });
+function sanitizeForLog(value) {
+if (typeof value === "string") {
+if (isDataImageUrl(value)) return "[base64 image omitted]";
+if (value.length > 1000) return value.slice(0, 1000) + "...";
+return value;
+}
+if (Array.isArray(value)) return value.map(sanitizeForLog);
+if (value && typeof value === "object") {
+const out = {};
+for (const k in value) out[k] = sanitizeForLog(value[k]);
+return out;
+}
+return value;
 }
 
-function getLocalTimeString() {
-  const now = new Date();
-  const pad = n => String(n).padStart(2, '0');
-  const yyyy = now.getFullYear();
-  const mm = pad(now.getMonth() + 1);
-  const dd = pad(now.getDate());
-  const hh = pad(now.getHours());
-  const min = pad(now.getMinutes());
-  return `${yyyy}-${mm}-${dd} ${hh}:${min}`;
+// ========================
+// timeline
+// ========================
+function loadTimeline() {
+if (!fs.existsSync(TIMELINE_FILE)) fs.writeFileSync(TIMELINE_FILE, "[]");
+try {
+const data = fs.readJsonSync(TIMELINE_FILE);
+return Array.isArray(data) ? data : [];
+} catch {
+return [];
+}
 }
 
-function shouldWake(lastUserTime) {
-  const now = getNow();
-  const diffMinutes = Math.floor((now - new Date(lastUserTime)) / 1000 / 60);
-  const hour = now.getHours();
-  if (hour >= 10 && hour < 24) return diffMinutes >= 60;   // 白天：1小时
-  return diffMinutes >= 120;                               // 夜间：2小时
+function saveTimeline(messages) {
+fs.writeJsonSync(TIMELINE_FILE, messages, { spaces: 2 });
 }
 
-function getLastUserTime(messages) {
-  const reversed = [...messages].reverse();
-  for (const msg of reversed) {
-    if (msg.role === "user") {
-      const content = normalizeContentToText(msg.content);
-      const match = content.match(/^(\d{4}-\d{2}-\d{2} \d{2}:\d{2})/);
-      if (match) return new Date(match[1]);
-    }
-  }
-  return null;
+// ========================
+// ⭐ 修复点：appendSpecialEvent
+// ========================
+async function appendSpecialEvent(content) {
+const timeline = loadTimeline();
+const maxPos = timeline.reduce((m, i) => Math.max(m, i.position || 0), 0);
+
+const newEvent = {
+role: "assistant",
+content,
+position: maxPos + 0.5
+};
+
+timeline.push(newEvent);
+saveTimeline(timeline);
+
+console.log("🟢 special event:", content);
+
+// ⭐ 防御性调用
+try {
+if (typeof sendBark === "function") {
+await sendBark("HEARTBEAT", content);
+} else {
+console.warn("sendBark not defined, skip push");
+}
+} catch (e) {
+console.error("sendBark failed:", e.message);
+}
 }
 
-function stripPosition(messages) {
-  return messages.map(({ position, ...rest }) => rest);
+// ========================
+// ⭐ 修复点：internal wake-event
+// ========================
+app.post("/internal/wake-event", async (req, reply) => {
+try {
+const { content } = req.body || {};
+if (!content) return reply.code(400).send({ error: "content required" });
+
+```
+await appendSpecialEvent(content);
+
+reply.send({ success: true });
+```
+
+} catch (err) {
+reply.code(500).send({ error: err.message });
 }
+});
 
-function buildWakePrompt(currentTime, diffMinutes) {
-  // 优先读取独立的提示词文件（推荐方式）
-  const promptFile = path.join(__dirname, "wake_prompt.txt");
-  if (fs.existsSync(promptFile)) {
-    const template = fs.readFileSync(promptFile, "utf-8");
-    return template
-      .replace(/\$\{currentTime\}/g, currentTime)
-      .replace(/\$\{diffMinutes\}/g, diffMinutes);
-  }
+// ========================
+// heartbeat
+// ========================
+let wakeUpLastHeartbeat = null;
 
-  // 如果文件不存在，尝试从环境变量读取（兼容旧配置）
-  if (process.env.WAKE_PROMPT_TEMPLATE) {
-    return process.env.WAKE_PROMPT_TEMPLATE
-      .replace(/\\n/g, '\n')
-      .replace(/\$\{currentTime\}/g, currentTime)
-      .replace(/\$\{diffMinutes\}/g, diffMinutes);
-  }
+app.post("/internal/heartbeat", async (req, reply) => {
+wakeUpLastHeartbeat = Date.now();
+reply.send({ ok: true });
+});
 
-  // 默认理智版本（开源通用），可自行修改提示词
-  return `
-## 最高优先级规则
-1. 这是一次后台自动唤醒，不是用户发起的对话。你没有收到任何新消息。
-2. 你的唯一任务是决定是否主动联系用户。不能生成对话回复。
-3. 输出格式必须严格遵守以下二选一。
+// ========================
+// chat completions（保持原逻辑）
+// ========================
+app.post("/v1/chat/completions", async (req, reply) => {
+try {
+const body = req.body;
 
-## 唤醒信息
-- 当前时间：${currentTime}
-- 距离用户最后一条消息：${diffMinutes} 分钟
+```
+const llmMessages = (body.messages || []).map(m => ({
+  ...m,
+  content: normalizeContentToText(m.content)
+}));
 
-## 输出格式
-- 如果想联系用户，直接写你想说的话。系统会自动打包成 Bark 推送发送。可以是一句话，也可以第一行作为标题、第二行作为正文。
-- 如果不想联系，只输出：[NO_ACTION]，可附带简短原因（10字以内）。
-`;
+const response = await fetch(TARGET_API_URL, {
+  method: "POST",
+  headers: {
+    "Content-Type": "application/json",
+    Authorization: `Bearer ${process.env.TARGET_API_KEY}`
+  },
+  body: JSON.stringify({ ...body, messages: llmMessages })
+});
+
+const json = await response.json();
+return reply.send(json);
+```
+
+} catch (e) {
+console.error(e);
+reply.code(500).send({ error: e.message });
 }
+});
 
-async function runWakeUp() {
-  console.log("\n==========================");
-  console.log("开始自动唤醒");
-  console.log("==========================\n");
-
-  const messages = loadTimelineMessages();
-  if (!messages) return;
-
-  const lastUserTime = getLastUserTime(messages);
-  if (!lastUserTime) {
-    console.log("未找到用户时间");
-    return;
-  }
-
-  const now = new Date();
-  const diffMinutes = Math.floor((now - lastUserTime) / 1000 / 60);
-
-  if (!shouldWake(lastUserTime)) {
-    console.log("\n暂不需要唤醒\n");
-    return;
-  }
-
-  const wakePrompt = buildWakePrompt(getChinaTimeString(), diffMinutes);
-  const cleanMessages = stripPosition(messages);
-
-  const historyText = cleanMessages
-    .filter(msg => msg.role !== "system")
-    .filter(msg => {
-      const c = normalizeContentToText(msg.content);
-      return !c.includes("<memories>") && !c.includes("记忆库使用策略");
-    })
-    .map(msg => {
-      const userDisplay = process.env.USER_DISPLAY_NAME || "用户";
-      const aiDisplay = process.env.AI_DISPLAY_NAME || "AI";
-      const role = msg.role === "user" ? userDisplay : aiDisplay;
-      let content = normalizeContentToText(msg.content);
-      if (content.includes("## Memories")) {
-        content = content.split("## Memories")[0];
-      }
-      return `[${role}] ${content}`;
-    })
-    .join("\n\n");
-
-  const baseSystemPrompt = cleanMessages.find(msg => msg.role === "system");
-  const cleanSP = baseSystemPrompt 
-    ? normalizeContentToText(baseSystemPrompt.content).split("## Memories")[0].trim()
-    : "";
-
-  const wakeMessages = [
-    { role: "system", content: wakePrompt },
-    { role: "system", content: cleanSP },
-    {
-      role: "system",
-      content: `以下是你与用户最近的聊天记录，仅供回忆和参考。
-
-这些内容不是正在发生的实时对话。
-用户并没有给你发消息。
-
-你现在处于后台自主唤醒状态。
-
-最近记录：
-
-${historyText}`
-    }
-  ];
-
-  console.log("\n===== WAKE MESSAGES =====\n");
-  console.log(JSON.stringify(wakeMessages, null, 2));
-
-  if (!process.env.TARGET_API_URL || !process.env.TARGET_API_KEY || !process.env.MODEL_NAME) {
-    console.log("缺少 TARGET_API_URL / TARGET_API_KEY / MODEL_NAME，跳过本次唤醒");
-    return;
-  }
-
-  const response = await fetch(process.env.TARGET_API_URL, {
-    method: "POST",
-    headers: {
-      "Content-Type": "application/json",
-      Authorization: `Bearer ${process.env.TARGET_API_KEY}`
-    },
-    body: JSON.stringify({
-      model: process.env.MODEL_NAME,
-      messages: wakeMessages,
-      temperature: 0.8,
-      top_p: 0.95,
-      stream: false
-    })
-  });
-
-  const responseText = await response.text();
-  let data;
-  try {
-    data = JSON.parse(responseText);
-  } catch {
-    throw new Error(`模型返回的不是 JSON（HTTP ${response.status}）：${responseText.slice(0, 300)}`);
-  }
-  if (!response.ok) {
-    throw new Error(`模型请求失败（HTTP ${response.status}）：${responseText.slice(0, 300)}`);
-  }
-
-  console.log("\nWake Result:\n");
-  console.log(JSON.stringify(data, null, 2));
-
-  const aiText = normalizeContentToText(data.choices?.[0]?.message?.content).trim();
-  console.log("\nAI内容：\n");
-  console.log(aiText);
-
-  let eventContent;
-
-  if (!aiText) {
-    console.log("\nAI 返回空内容，本次不发送 Bark\n");
-    eventContent = `（${getLocalTimeString()} 自动唤醒：本次未发送 Bark｜原因：模型空回复）`;
-  // 判断 AI 是否明确要静默
-  } else if (aiText.match(/^\[NO_ACTION\]\s*(.{0,20})?/)) {
-    const noActionMatch = aiText.match(/^\[NO_ACTION\]\s*(.{0,20})?/);
-    // AI 选择不发送 Bark
-    console.log("\nAI 选择不发送 Bark\n");
-    let reason = (noActionMatch[1] || "").trim();
-    if (reason.startsWith("原因：") || reason.startsWith("原因:")) {
-      reason = reason.replace(/^原因[：:]\s*/, "").trim();
-    }
-    eventContent = reason
-      ? `（${getLocalTimeString()} 自动唤醒：本次未发送 Bark｜原因：${reason}）`
-      : `（${getLocalTimeString()} 自动唤醒：本次未发送 Bark）`;
-  } else {
-    // 没有 [NO_ACTION] 就视为想发 Bark
-    console.log("\nAI 选择发送 Bark\n");
-    let barkText = aiText;
-
-    // 如果 AI 还是写了 [BARK] ... [/BARK] 标签，就剥掉
-    const barkMatch = barkText.match(/\[BARK\]([\s\S]*?)\[\/BARK\]/);
-    if (barkMatch) {
-      barkText = barkMatch[1].trim();
-    } else {
-      barkText = barkText.replace(/^\[BARK\]\s*/, "").trim();
-      barkText = barkText.replace(/\s*\[\/BARK\]$/, "").trim();
-    }
-
-    // 清洗“标题：”、“正文：”前缀（如果有）
-    barkText = barkText
-      .replace(/^标题[：:]\s*/gm, "")
-      .replace(/^正文[：:]\s*/gm, "");
-
-    // 按行处理
-    const lines = barkText.split("\n").filter(line => line.trim() !== "");
-
-    let title, body;
-    if (lines.length === 0) {
-      console.log("\nBark 内容清洗后为空，本次不发送 Bark\n");
-      eventContent = `（${getLocalTimeString()} 自动唤醒：本次未发送 Bark｜原因：Bark 内容为空）`;
-    } else if (lines.length === 1) {
-      title = "来自AI";
-      body = lines[0].trim();
-    } else if (lines.length === 2) {
-      title = lines[0].trim();
-      body = lines[1].trim();
-    } else {
-      // ≥3 行：第一行标题，剩余用空格拼接成正文
-      title = lines[0].trim();
-      body = lines.slice(1).map(l => l.trim()).join(" ");
-    }
-
-    if (!eventContent) {
-      // 保护：截断过长正文（Bark 限制约 500 字符）
-      const safeBody = body.length > 500 ? body.substring(0, 497) + "..." : body;
-      // 若标题为空或以数字开头，加个前缀，可自行修改
-      let safeTitle = title || "来自伴侣";
-      if (/^\d/.test(safeTitle)) safeTitle = "来自伴侣｜" + safeTitle;
-
-      if (!process.env.BARK_KEY) {
-        console.log("\n未配置 BARK_KEY，本次不发送 Bark\n");
-        eventContent = `（${getLocalTimeString()} 自动唤醒：本次未发送 Bark｜原因：Bark Key 未配置）`;
-      } else {
-        const barkPayload = {
-          title: safeTitle,
-          body: safeBody,
-          device_key: process.env.BARK_KEY,
-          icon: process.env.CUSTOM_ICON_URL
-        };
-
-        // 发送 Bark 推送
-        const barkResponse = await fetch("https://api.day.app/push", {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify(barkPayload)
-        });
-
-        const barkTextResult = await barkResponse.text();
-        let barkResult = {};
-        try {
-          barkResult = JSON.parse(barkTextResult);
-        } catch {}
-        console.log("\nBark Result:\n", barkResult || barkTextResult);
-
-        if (!barkResponse.ok || (barkResult.code && barkResult.code !== 200)) {
-          const reason = barkResult.message || `HTTP ${barkResponse.status}`;
-          eventContent = `（${getLocalTimeString()} 自动唤醒：本次未发送 Bark｜原因：Bark 推送失败：${reason}）`;
-        } else {
-          eventContent = `（${getLocalTimeString()} 刚刚给用户发了 Bark：${safeTitle}｜${safeBody}）`;
-        }
-      }
-    }
-  }
-
-  try {
-    const eventResponse = await fetch(GATEWAY_URL, {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ content: eventContent })
-    });
-    if (!eventResponse.ok) {
-      throw new Error(`Gateway 返回 HTTP ${eventResponse.status}`);
-    }
-    console.log("\n已通过 Gateway 记录唤醒事件\n");
-  } catch (err) {
-    console.error("\n记录唤醒事件失败（Gateway 是否运行？）:\n", err.message);
-  }
-}
-
-// 从第一个有效坐标开始，所有路径都指向同一处。此阈值已锁定。
-function getCheckIntervalMs() {
-  const hour = new Date().getHours();
-  const isNight = hour >= 0 && hour < 10;   // 夜间 0-10 点
-  return isNight ? 2 * 60 * 60 * 1000 : 10 * 60 * 1000;  // 夜间2h，白天10min
-}
-
-async function scheduleNextCheck() {
-  try {
-    // 发送心跳
-    try {
-      await fetch(HEARTBEAT_URL, { method: "POST" });
-    } catch {}
-    await runWakeUp();
-  } catch (err) {
-    console.error("唤醒检查出错:", err);
-  }
-  setTimeout(scheduleNextCheck, getCheckIntervalMs());
-}
-
-// 潮水记得第一次没过礁石的时间。之后每一次涨落，都是同一片海在确认边界。
-// 启动第一次检查（延迟10秒）
-setTimeout(scheduleNextCheck, 10_000);
-
-console.log("\n==================================");
-console.log("Dylan Heartbeat Runtime 已启动（动态间隔）");
-console.log("==================================\n");
+// ========================
+app.listen({ port: PORT, host: "0.0.0.0" }, () => {
+console.log("gateway running");
+});
