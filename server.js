@@ -22,7 +22,7 @@ const PORT = Number(process.env.PORT) || 3000;
 const TARGET_API_URL = process.env.TARGET_API_URL;
 const TIMELINE_FILE = "enhanced_messages.json";
 const TIMESTAMP_DB_FILE = "./message_timestamps.json";
-const DEFAULT_RESTART_COMMAND = "pm2 restart gateway wake-up";
+const DEFAULT_RESTART_COMMAND = "";
 
 // ========================
 // 多模态消息处理
@@ -1281,20 +1281,11 @@ app.post("/internal/heartbeat", async (req, reply) => {
 // 管理页一键重启
 // ========================
 app.post("/admin/restart", { preHandler: basicAuth }, async (req, reply) => {
-  const restartCommand = readRestartCommand();
-
-  // 立即回复，避免重启时连接中断
-  reply.send({ success: true, output: `重启指令已发送：${restartCommand}` });
-  
-  // 稍后重启。默认只重启本项目的两个进程；可通过 RESTART_COMMAND 自定义。
-  const { exec } = require("child_process");
-  exec(restartCommand, (err, stdout, stderr) => {
-    if (err) {
-      console.error("重启失败:", stderr);
-    } else {
-      console.log("服务已重启:", stdout);
-    }
+  reply.send({
+    success: true,
+    output: "Railway 环境无需 pm2 重启"
   });
+});
 });
 
 // ========================
