@@ -446,6 +446,9 @@ function readRestartCommand() {
 // ========================
 // Models
 // ========================
+app.get("/", async (req, reply) => {
+  reply.send({ ok: true });
+});
 app.get("/v1/models", async (req, reply) => {
   reply.send({
     object: "list",
