@@ -144,10 +144,19 @@ function safeJsonForInlineScript(value) {
 // 读取 timeline
 // ========================
 function loadTimeline() {
-  if (!fs.existsSync(TIMELINE_FILE)) {
-    console.log("⚠️ 未找到 enhanced_messages.json");
+  if (!fs.existsSync(TIMELINE_FILE)) return [];
+
+  try {
+    const data = fs.readJsonSync(TIMELINE_FILE);
+
+    // 过滤掉 position 字段
+    return Array.isArray(data)
+      ? data.map(({ position, ...rest }) => rest)
+      : [];
+  } catch {
     return [];
   }
+}
 
   try {
     const data = fs.readJsonSync(TIMELINE_FILE);
