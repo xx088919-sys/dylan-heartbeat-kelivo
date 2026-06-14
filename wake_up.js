@@ -362,14 +362,11 @@ function getCheckIntervalMs() {
 
 async function scheduleNextCheck() {
   try {
-    // 发送心跳
-    try {
-      await fetch(HEARTBEAT_URL, { method: "POST" });
-    } catch {}
     await runWakeUp();
   } catch (err) {
     console.error("唤醒检查出错:", err);
   }
+
   setTimeout(scheduleNextCheck, getCheckIntervalMs());
 }
 
@@ -380,3 +377,6 @@ setTimeout(scheduleNextCheck, 10_000);
 console.log("\n==================================");
 console.log("Dylan Heartbeat Runtime 已启动（动态间隔）");
 console.log("==================================\n");
+setInterval(() => {
+  fetch(HEARTBEAT_URL).catch(() => {});
+}, 30000);
