@@ -350,31 +350,37 @@ function buildTimeline(kelivoMessages, tsDB) {
 // 追加特殊事件
 // ========================
 async function sendBark(title, content) {
-  const baseUrl = process.env.BARK_KEY;
+  const key = process.env.BARK_KEY;
 
-  if (!baseUrl) {
+  if (!key) {
     console.error("Bark key missing");
-    return;
+    return false;
   }
 
-  // ① 防止 URL 太长
-  const MAX_LEN = 1800;
+  const MAX_LEN = 2000;
   if (content.length > MAX_LEN) {
     content = content.slice(0, MAX_LEN) + "...";
   }
 
-  const url = `${baseUrl}/${encodeURIComponent(title)}/${encodeURIComponent(content)}`;
-
   try {
-    const res = await fetch(url);
+    const res = await fetch("https://api.day.app/push", {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json"
+      },
+      body: JSON.stringify({
+        device_key: key,
+        title,
+        body: content
+      })
+    });
 
-    // ② status 检查
     if (!res.ok) {
-      const text = await res.text();
-      console.error("Bark failed:", res.status, text);
+      console.error("Bark failed:", res.status, await res.text());
+      return false;
     }
 
-    return res.ok;
+    return true;
   } catch (err) {
     console.error("Bark request error:", err);
     return false;
