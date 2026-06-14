@@ -388,8 +388,6 @@ async function scheduleNextCheck() {
   }
 }
 
-  }
-
   setTimeout(scheduleNextCheck, getCheckIntervalMs());
 }
 
