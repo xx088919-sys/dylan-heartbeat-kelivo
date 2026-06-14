@@ -1,3 +1,4 @@
+let WAKE_RUNNING = false;
 require("dotenv").config();
 function reportStatus(type, extra = {}) {
   return fetch(GATEWAY_URL, {
@@ -146,16 +147,15 @@ function buildWakePrompt(currentTime, diffMinutes) {
 }
 
 async function runWakeUp() {
-  console.log("\n==========================");
-  console.log("开始自动唤醒");
-  console.log("==========================\n");
-
-  const messages = loadTimelineMessages();
-  if (!messages) return;
+  if (WAKE_RUNNING) return;
+  WAKE_RUNNING = true;
 
   const lastUserTime = getLastUserTime(messages);
   if (!lastUserTime) {
     console.log("未找到用户时间");
+  finally {
+  WAKE_RUNNING = false;
+}
     return;
   }
 
@@ -391,17 +391,20 @@ async function scheduleNextCheck() {
 
 // 潮水记得第一次没过礁石的时间。之后每一次涨落，都是同一片海在确认边界。
 // 启动第一次检查（延迟10秒）
-setTimeout(async () => {
-  await reportStatus("init_delay_start");
-  scheduleNextCheck();
-}, 10_000);
+let started = false;
+
+if (!started) {
+  started = true;
+  setTimeout(scheduleNextCheck, 10_000);
+}
 
 console.log("\n==================================");
 console.log("Dylan Heartbeat Runtime 已启动（动态间隔）");
 console.log("==================================\n");
-setInterval(() => {
-  fetch(HEARTBEAT_URL).catch(() => {});
-}, 30000);
+// ❌ 暂时关闭，避免重复触发
+// setInterval(() => {
+//   fetch(HEARTBEAT_URL).catch(() => {});
+// }, 30000);
 reportStatus("startup", {
   msg: "wake service started"
 });
