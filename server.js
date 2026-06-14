@@ -144,8 +144,24 @@ function safeJsonForInlineScript(value) {
 // 读取 timeline
 // ========================
 function loadTimeline() {
-  if (!fs.existsSync(TIMELINE_FILE)) return [];
-  try { return fs.readJsonSync(TIMELINE_FILE); } catch { return []; }
+  if (!fs.existsSync(TIMELINE_FILE)) {
+    console.log("⚠️ 未找到 enhanced_messages.json");
+    return [];
+  }
+
+  try {
+    const data = fs.readJsonSync(TIMELINE_FILE);
+
+    console.log(
+      "✅ 读取 enhanced_messages.json 成功，消息数:",
+      data.length
+    );
+
+    return data;
+  } catch (err) {
+    console.error("❌ 读取 timeline 失败:", err);
+    return [];
+  }
 }
 
 // ========================
@@ -156,7 +172,21 @@ function saveTimeline(messages) {
   const nonSP = messages.filter(m => m.role !== "system");
   const trimmed = nonSP.slice(-49);
   const final = sp ? [sp, ...trimmed] : trimmed;
-  fs.writeJsonSync(TIMELINE_FILE, final, { spaces: 2 });
+
+  try {
+    fs.ensureFileSync(TIMELINE_FILE);
+
+    fs.writeJsonSync(TIMELINE_FILE, final, {
+      spaces: 2
+    });
+
+    console.log(
+      "✅ enhanced_messages.json 已保存，消息数:",
+      final.length
+    );
+  } catch (err) {
+    console.error("❌ 保存 timeline 失败:", err);
+  }
 }
 
 // ========================
