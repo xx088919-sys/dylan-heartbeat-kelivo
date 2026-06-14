@@ -423,6 +423,9 @@ function stripPosition(messages) {
 }
 
 let wakeUpLastHeartbeat = null;
+const HEARTBEAT_TIMEOUT = 5 * 60 * 1000; // 5分钟
+const HEARTBEAT_CHECK_INTERVAL = 60 * 1000; // 每分钟检查一次
+let heartbeatAlertSent = false;
 
 // ========================
 // 预设方案
@@ -1387,6 +1390,35 @@ app.get("/test-bark", async (req, reply) => {
 // ========================
 // 启动服务
 // ========================
+setInterval(async () => {
+  try {
+    const now = Date.now();
+
+    // 没收到心跳
+    if (!wakeUpLastHeartbeat) return;
+
+    const diff = now - wakeUpLastHeartbeat;
+
+    if (diff > HEARTBEAT_TIMEOUT && !heartbeatAlertSent) {
+      heartbeatAlertSent = true;
+
+      console.log("⚠️ 心跳超时，触发自动推送");
+
+      await appendSpecialEvent(
+        `⚠️ 系统异常：心跳已超过 ${Math.floor(diff / 1000)} 秒未更新`
+      );
+
+    }
+
+    // 心跳恢复后允许下次再次报警
+    if (diff <= HEARTBEAT_TIMEOUT) {
+      heartbeatAlertSent = false;
+    }
+
+  } catch (err) {
+    console.error("heartbeat checker error:", err);
+  }
+}, HEARTBEAT_CHECK_INTERVAL);
 app.listen({ port: PORT, host: "0.0.0.0" }, (err, address) => {
   if (err) {
     console.error(err);
