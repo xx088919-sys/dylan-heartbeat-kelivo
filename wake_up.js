@@ -90,6 +90,11 @@ function getLastUserTime(messages) {
       const content = normalizeContentToText(msg.content);
       const match = content.match(/^(\d{4}-\d{2}-\d{2} \d{2}:\d{2})/);
       if (match) return new Date(match[1]);
+
+      // 没有时间戳时，使用消息本身的时间或当前时间
+      if (msg.timestamp) return new Date(msg.timestamp);
+      if (msg.time) return new Date(msg.time);
+      return new Date();
     }
   }
   return null;
