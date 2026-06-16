@@ -1315,10 +1315,15 @@ app.listen({ port: PORT, host: "0.0.0.0" }, (err, address) => {
   }
   console.log(`✅ Gateway 运行在 ${address}`);
 });
-// 内嵌启动唤醒脚本，适配Railway容器限制
-const { spawn } = require('child_process');
-const wakeProcess = spawn('node', ['wake_up.js'], {
-  detached: true,
-  stdio: 'ignore'
-});
-wakeProcess.unref();
+// 适配Render稳定启动wake_up
+const { exec } = require('child_process');
+// 延迟2秒启动，等网关完全就绪
+setTimeout(() => {
+  const child = exec('node wake_up.js');
+  child.stdout.on('data', (data) => {
+    console.log(data.toString());
+  });
+  child.stderr.on('data', (data) => {
+    console.error(data.toString());
+  });
+}, 2000);
