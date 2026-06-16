@@ -22,7 +22,7 @@ const PORT = Number(process.env.PORT) || 3000;
 const TARGET_API_URL = process.env.TARGET_API_URL;
 const TIMELINE_FILE = "enhanced_messages.json";
 const TIMESTAMP_DB_FILE = "./message_timestamps.json";
-const DEFAULT_RESTART_COMMAND = "";
+const DEFAULT_RESTART_COMMAND = "pm2 restart gateway wake-up";
 
 // ========================
 // 多模态消息处理
@@ -49,16 +49,7 @@ function isFileContentPart(part) {
   const type = typeof part.type === "string" ? part.type.toLowerCase() : "";
   return type.includes("file");
 }
-setInterval(() => {
-  const now = new Date();
 
-  // 示例：每 30 分钟推一次
-  const minutes = now.getMinutes();
-
-  if (minutes % 30 === 0) {
-    sendBark("HEARTBEAT", `自动检测：${now.toLocaleString()}`);
-  }
-}, 60 * 1000);
 function getTextFromContentPart(part) {
   if (typeof part === "string") return part;
   if (!part || typeof part !== "object") return "";
@@ -153,21 +144,9 @@ function safeJsonForInlineScript(value) {
 // 读取 timeline
 // ========================
 function loadTimeline() {
-  if (!fs.existsSync(TIMELINE_FILE)) {
-    fs.writeFileSync(TIMELINE_FILE, "[]");
-  }
-
-  try {
-    const data = fs.readJsonSync(TIMELINE_FILE);
-
-    return Array.isArray(data)
-      ? data.map(({ position, ...rest }) => rest)
-      : [];
-  } catch (err) {
-    return [];
-  }
+  if (!fs.existsSync(TIMELINE_FILE)) return [];
+  try { return fs.readJsonSync(TIMELINE_FILE); } catch { return []; }
 }
-
 
 // ========================
 // 保存 timeline（保留 SP）
@@ -177,21 +156,7 @@ function saveTimeline(messages) {
   const nonSP = messages.filter(m => m.role !== "system");
   const trimmed = nonSP.slice(-49);
   const final = sp ? [sp, ...trimmed] : trimmed;
-
-  try {
-    fs.ensureFileSync(TIMELINE_FILE);
-
-    fs.writeJsonSync(TIMELINE_FILE, final, {
-      spaces: 2
-    });
-
-    console.log(
-      "✅ enhanced_messages.json 已保存，消息数:",
-      final.length
-    );
-  } catch (err) {
-    console.error("❌ 保存 timeline 失败:", err);
-  }
+  fs.writeJsonSync(TIMELINE_FILE, final, { spaces: 2 });
 }
 
 // ========================
@@ -358,64 +323,16 @@ function buildTimeline(kelivoMessages, tsDB) {
 // ========================
 // 追加特殊事件
 // ========================
-async function sendBark(title, content) {
-  const key = process.env.BARK_KEY;
-
-  if (!key) {
-    console.error("Bark key missing");
-    return false;
-  }
-
-  const MAX_LEN = 2000;
-  if (content.length > MAX_LEN) {
-    content = content.slice(0, MAX_LEN) + "...";
-  }
-
-  try {
-    const res = await fetch("https://api.day.app/push", {
-      method: "POST",
-      headers: {
-        "Content-Type": "application/json"
-      },
-      body: JSON.stringify({
-        device_key: key,
-        title,
-        body: content
-      })
-    });
-
-    if (!res.ok) {
-      console.error("Bark failed:", res.status, await res.text());
-      return false;
-    }
-
-    return true;
-  } catch (err) {
-    console.error("Bark request error:", err);
-    return false;
-  }
-}
-async function appendSpecialEvent(content) {
+function appendSpecialEvent(content) {
   const timeline = loadTimeline();
-
   let maxPos = 0;
   for (const msg of timeline) {
     if (msg.position && msg.position > maxPos) maxPos = msg.position;
   }
-
-  const newEvent = {
-    role: "assistant",
-    content,
-    position: maxPos + 0.5
-  };
-
+  const newEvent = { role: "assistant", content, position: maxPos + 0.5 };
   timeline.push(newEvent);
   saveTimeline(timeline);
-
-  console.log(`已记录特殊事件: ${content}`);
-
-  // ⭐⭐⭐ 这里才是真正推送 Bark
-  await sendBark("HEARTBEAT", content);
+  console.log(`\n已记录特殊事件 (position ${newEvent.position}): ${content}\n`);
 }
 
 function stripPosition(messages) {
@@ -423,9 +340,6 @@ function stripPosition(messages) {
 }
 
 let wakeUpLastHeartbeat = null;
-const HEARTBEAT_TIMEOUT = 5 * 60 * 1000; // 5分钟
-const HEARTBEAT_CHECK_INTERVAL = 60 * 1000; // 每分钟检查一次
-let heartbeatAlertSent = false;
 
 // ========================
 // 预设方案
@@ -503,12 +417,17 @@ function readRestartCommand() {
 // ========================
 // 安全：放行 /admin，其他仅本地/局域网
 // ========================
+app.addHook("onRequest", (req, reply, done) => {
+  if (req.url.startsWith("/admin")) return done();
+  const ip = req.ip || req.connection.remoteAddress;
+  if (ip === "127.0.0.1" || ip === "::1" || ip === "localhost") return done();
+  if (/^(10\.|172\.(1[6-9]|2\d|3[01])\.|192\.168\.)/.test(ip)) return done();
+  reply.code(403).send("Forbidden");
+});
+
 // ========================
 // Models
 // ========================
-app.get("/", async (req, reply) => {
-  reply.send({ ok: true });
-});
 app.get("/v1/models", async (req, reply) => {
   reply.send({
     object: "list",
@@ -666,34 +585,23 @@ app.post("/v1/chat/completions", async (req, reply) => {
       body: JSON.stringify({ ...body, messages: llmMessages })
     });
 
-// 非流式请求
-if (!body.stream) {
-  const json = await response.json();
-  return reply.code(response.status).send(json);
-}
+    if (!response.body) {
+      return reply.code(response.status).send({ error: "上游 API 没有返回可读取的响应体" });
+    }
 
-// 流式请求
-if (!response.body) {
-  return reply.code(response.status).send({
-    error: "上游 API 没有返回可读取的响应体"
-  });
-}
+    reply.raw.writeHead(response.status, {
+      "Content-Type": "text/event-stream",
+      "Cache-Control": "no-cache",
+      Connection: "keep-alive"
+    });
 
-reply.raw.writeHead(response.status, {
-  "Content-Type": "text/event-stream",
-  "Cache-Control": "no-cache",
-  Connection: "keep-alive"
-});
-
-const reader = response.body.getReader();
-
-while (true) {
-  const { done, value } = await reader.read();
-  if (done) break;
-  reply.raw.write(value);
-}
-
-reply.raw.end();
+    const reader = response.body.getReader();
+    while (true) {
+      const { done, value } = await reader.read();
+      if (done) break;
+      reply.raw.write(value);
+    }
+    reply.raw.end();
   } catch (err) {
     console.error(err);
     reply.code(500).send({ error: err.message });
@@ -1370,9 +1278,19 @@ app.post("/internal/heartbeat", async (req, reply) => {
 // 管理页一键重启
 // ========================
 app.post("/admin/restart", { preHandler: basicAuth }, async (req, reply) => {
-  reply.send({
-    success: true,
-    output: "Railway 环境无需 pm2 重启"
+  const restartCommand = readRestartCommand();
+
+  // 立即回复，避免重启时连接中断
+  reply.send({ success: true, output: `重启指令已发送：${restartCommand}` });
+  
+  // 稍后重启。默认只重启本项目的两个进程；可通过 RESTART_COMMAND 自定义。
+  const { exec } = require("child_process");
+  exec(restartCommand, (err, stdout, stderr) => {
+    if (err) {
+      console.error("重启失败:", stderr);
+    } else {
+      console.log("服务已重启:", stdout);
+    }
   });
 });
 
@@ -1390,41 +1308,10 @@ app.get("/test-bark", async (req, reply) => {
 // ========================
 // 启动服务
 // ========================
-setInterval(async () => {
-  try {
-    const now = Date.now();
-
-    // 没收到心跳
-    if (!wakeUpLastHeartbeat) return;
-
-    const diff = now - wakeUpLastHeartbeat;
-
-    if (diff > HEARTBEAT_TIMEOUT && !heartbeatAlertSent) {
-      heartbeatAlertSent = true;
-
-      console.log("⚠️ 心跳超时，触发自动推送");
-
-      await appendSpecialEvent(
-        `⚠️ 系统异常：心跳已超过 ${Math.floor(diff / 1000)} 秒未更新`
-      );
-
-    }
-
-    // 心跳恢复后允许下次再次报警
-    if (diff <= HEARTBEAT_TIMEOUT) {
-      heartbeatAlertSent = false;
-    }
-
-  } catch (err) {
-    console.error("heartbeat checker error:", err);
-  }
-}, HEARTBEAT_CHECK_INTERVAL);
 app.listen({ port: PORT, host: "0.0.0.0" }, (err, address) => {
   if (err) {
     console.error(err);
     process.exit(1);
   }
   console.log(`✅ Gateway 运行在 ${address}`);
-  require("./wake_up");
 });
-
