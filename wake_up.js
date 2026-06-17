@@ -157,7 +157,7 @@ async function runWakeUp() {
   const diffMinutes = Math.floor((now - lastUserTime) / 1000 / 60);
 
   if (!shouldWake(lastUserTime)) {
-    ///console.log("\n暂不需要唤醒\n");
+    console.log("\n暂不需要唤醒\n");
     return;
   }
 
