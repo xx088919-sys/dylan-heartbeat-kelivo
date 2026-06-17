@@ -81,7 +81,7 @@ function shouldWake(lastUserTime) {
   const now = getNow();
   const diffMinutes = Math.floor((now - new Date(lastUserTime)) / 1000 / 60);
   const hour = now.getHours();
-  if (hour >= 10 && hour < 24) return diffMinutes >= 10;
+  if (hour >= 10 && hour < 24) return diffMinutes >= 60;
   return diffMinutes >= 120;
 }
 function getLastUserTime(messages) {
