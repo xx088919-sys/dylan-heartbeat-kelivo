@@ -78,13 +78,8 @@ function getLocalTimeString() {
 }
 
 function shouldWake(lastUserTime) {
-  const now = getNow();
-  const diffMinutes = Math.floor((now - new Date(lastUserTime)) / 1000 / 60);
-  const hour = now.getHours();
-  if (hour >= 10 && hour < 24) return diffMinutes >= 60;   // 白天：1小时
-  return diffMinutes >= 120;                               // 夜间：2小时
+  return true;
 }
-
 function getLastUserTime(messages) {
   const reversed = [...messages].reverse();
   for (const msg of reversed) {
