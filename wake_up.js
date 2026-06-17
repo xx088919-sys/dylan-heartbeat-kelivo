@@ -38,10 +38,12 @@ function normalizeContentToText(content) {
 }
 
 function loadTimelineMessages() {
+  // ========== 新增：文件不存在则自动创建空数组 ==========
   if (!fs.existsSync(TIMELINE_PATH)) {
-    console.log("未找到 enhanced_messages.json");
-    return null;
+    fs.writeFileSync(TIMELINE_PATH, JSON.stringify([], null, 2), "utf-8");
+    console.log("自动创建空 enhanced_messages.json");
   }
+  // =====================================================
 
   try {
     const parsed = JSON.parse(fs.readFileSync(TIMELINE_PATH, "utf-8"));
@@ -87,12 +89,16 @@ function getLastUserTime(messages) {
   const reversed = [...messages].reverse();
   for (const msg of reversed) {
     if (msg.role === "user") {
-      const content = normalizeContentToText(msg.content);
-      const match = content.match(/^(\d{4}-\d{2}-\d{2} \d{2}:\d{2})/);
-      if (match) return new Date(match[1]);
+      // 优先取消息自带时间字段，不再解析文本
+      const timeVal = msg.timestamp || msg.time || msg.created_at;
+      if (timeVal) {
+        return new Date(timeVal);
+      }
     }
   }
-  return null;
+  // 兜底：实在没有任何时间字段，返回当前时间（避免直接退出）
+  console.log("消息无内置时间字段，使用系统当前时间兜底");
+  return new Date();
 }
 
 function stripPosition(messages) {
