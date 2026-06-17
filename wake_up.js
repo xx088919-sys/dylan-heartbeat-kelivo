@@ -155,20 +155,18 @@ async function runWakeUp() {
   }
 
   const now = getNow();
-  const lastTimeObj = new Date(lastUserTime);
-  const diffMinutes = Math.floor((now - lastTimeObj) / 1000 / 60);
-  const currentHour = now.getHours();
-
-  // 新增调试日志
-  console.log("【调试】当前容器本地时间：", now.toLocaleString("zh-CN", {timeZone: "Asia/Shanghai"}));
-  console.log("【调试】用户最后发言时间：", lastTimeObj.toLocaleString("zh-CN", {timeZone: "Asia/Shanghai"}));
-  console.log("【调试】间隔分钟数：", diffMinutes);
-  console.log("【调试】当前小时：", currentHour);
+  const diffMinutes = Math.floor((now - new Date(lastUserTime)) / 1000 / 60);
+  // ========= 仅新增这两行，其余不动 =========
+  console.log("【间隔分钟数】", diffMinutes);
+  console.log("【最后用户时间戳】", lastUserTime);
+  // ========================================
 
   if (!shouldWake(lastUserTime)) {
     console.log("\n暂不需要唤醒\n");
     return;
   }
+  
+  // 下面原有代码完全不动
   const now = new Date();
   const diffMinutes = Math.floor((now - lastUserTime) / 1000 / 60);
 
