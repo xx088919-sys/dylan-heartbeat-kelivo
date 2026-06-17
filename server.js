@@ -22,7 +22,7 @@ const PORT = Number(process.env.PORT) || 3000;
 const TARGET_API_URL = process.env.TARGET_API_URL;
 const TIMELINE_FILE = "enhanced_messages.json";
 const TIMESTAMP_DB_FILE = "./message_timestamps.json";
-const DEFAULT_RESTART_COMMAND = "pm2 restart gateway wake-up";
+const DEFAULT_RESTART_COMMAND = "pkill -f 'node'";
 
 // ========================
 // 多模态消息处理
