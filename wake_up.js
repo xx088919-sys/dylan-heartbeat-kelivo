@@ -222,20 +222,23 @@ ${historyText}`
     return;
   }
 
-  const response = await fetch(process.env.TARGET_API_URL, {
-    method: "POST",
-    headers: {
-      "Content-Type": "application/json",
-      Authorization: `Bearer ${process.env.TARGET_API_KEY}`
-    },
-    body: JSON.stringify({
-      model: process.env.MODEL_NAME,
-      messages: wakeMessages,
-      temperature: 0.8,
-      top_p: 0.95,
-      stream: false
-    })
-  });
+const controller = new AbortController();
+const timeoutId = setTimeout(() => controller.abort(), 15000);
+const response = await fetch(process.env.TARGET_API_URL, {
+  method: "POST",
+  headers: {
+    "Content-Type": "application/json",
+    Authorization: `Bearer ${process.env.TARGET_API_KEY}`
+  },
+  body: JSON.stringify({
+    model: process.env.MODEL_NAME,
+    messages: wakeMessages,
+    temperature: 0.8,
+    top_p: 0.95,
+    stream: false
+  }),
+  signal: controller.signal
+}).finally(() => clearTimeout(timeoutId));
 
   const responseText = await response.text();
   let data;
