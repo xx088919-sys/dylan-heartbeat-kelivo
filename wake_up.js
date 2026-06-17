@@ -316,12 +316,15 @@ ${historyText}`
         console.log("\n未配置 BARK_KEY，本次不发送 Bark\n");
         eventContent = `（${getLocalTimeString()} 自动唤醒：本次未发送 Bark｜原因：Bark Key 未配置）`;
       } else {
-        const barkPayload = {
-          title: safeTitle,
-          body: safeBody,
-          device_key: process.env.BARK_KEY,
-          icon: process.env.CUSTOM_ICON_URL
-        };
+       const barkPayload = {
+  title: safeTitle,
+  body: safeBody,
+  device_key: process.env.BARK_KEY
+};
+// 只有存在图标链接才追加字段
+if (process.env.CUSTOM_ICON_URL && process.env.CUSTOM_ICON_URL.trim()) {
+  barkPayload.icon = process.env.CUSTOM_ICON_URL.trim();
+}
 
         // 发送 Bark 推送
         const barkResponse = await fetch("https://api.day.app/push", {
