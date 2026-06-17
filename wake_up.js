@@ -2,7 +2,7 @@ require("dotenv").config();
 const fs = require("fs");
 const path = require("path");
 
-const TIMELINE_PATH = path.join(__dirname, "messages.json");
+const TIMELINE_PATH = path.join(__dirname, "enhanced_messages.json");
 const PORT = Number(process.env.PORT) || 3000;
 const GATEWAY_BASE_URL = (process.env.GATEWAY_BASE_URL || `http://localhost:${PORT}`).replace(/\/+$/, "");
 const GATEWAY_URL = `${GATEWAY_BASE_URL}/internal/wake-event`;
@@ -88,13 +88,8 @@ function getLastUserTime(messages) {
   for (const msg of reversed) {
     if (msg.role === "user") {
       const content = normalizeContentToText(msg.content);
-      const match = content.match(/^(\d{4}-\d{2}-\d{2})[- ](\d{2}:\d{2})/);
-if (match) return new Date(`${match[1]} ${match[2]}`);
-
-      // 没有时间戳时，使用消息本身的时间或当前时间
-      if (msg.timestamp) return new Date(msg.timestamp);
-      if (msg.time) return new Date(msg.time);
-      return new Date();
+      const match = content.match(/^(\d{4}-\d{2}-\d{2} \d{2}:\d{2})/);
+      if (match) return new Date(match[1]);
     }
   }
   return null;
