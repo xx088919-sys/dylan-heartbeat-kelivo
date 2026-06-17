@@ -165,15 +165,6 @@ async function runWakeUp() {
     console.log("\n暂不需要唤醒\n");
     return;
   }
-  
-  // 下面原有代码完全不动
-  const now = new Date();
-  const diffMinutes = Math.floor((now - lastUserTime) / 1000 / 60);
-
-  if (!shouldWake(lastUserTime)) {
-    console.log("\n暂不需要唤醒\n");
-    return;
-  }
 
   const wakePrompt = buildWakePrompt(getChinaTimeString(), diffMinutes);
   const cleanMessages = stripPosition(messages);
