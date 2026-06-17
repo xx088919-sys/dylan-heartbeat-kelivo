@@ -1298,9 +1298,15 @@ app.post("/admin/restart", { preHandler: basicAuth }, async (req, reply) => {
 });
 
 // ========================
-// 测试 Bark
+// 测试 Bark（GET推送版）
 // ========================
 app.get("/test-bark", async (req, reply) => {
+  const testTitle = "后端推送测试";
+  const testBody = "改造GET链接测试通知";
+  const barkUrl = `https://api.day.app/${process.env.BARK_KEY}/${encodeURIComponent(testTitle)}/${encodeURIComponent(testBody)}`;
+  const barkRes = await fetch(barkUrl);
+  console.log("测试Bark返回：", await barkRes.text());
+
   const now = new Date();
   const pad = n => String(n).padStart(2, '0');
   const formattedTime = `${now.getFullYear()}-${pad(now.getMonth() + 1)}-${pad(now.getDate())} ${pad(now.getHours())}:${pad(now.getMinutes())}`;
