@@ -154,6 +154,21 @@ async function runWakeUp() {
     return;
   }
 
+  const now = getNow();
+  const lastTimeObj = new Date(lastUserTime);
+  const diffMinutes = Math.floor((now - lastTimeObj) / 1000 / 60);
+  const currentHour = now.getHours();
+
+  // 新增调试日志
+  console.log("【调试】当前容器本地时间：", now.toLocaleString("zh-CN", {timeZone: "Asia/Shanghai"}));
+  console.log("【调试】用户最后发言时间：", lastTimeObj.toLocaleString("zh-CN", {timeZone: "Asia/Shanghai"}));
+  console.log("【调试】间隔分钟数：", diffMinutes);
+  console.log("【调试】当前小时：", currentHour);
+
+  if (!shouldWake(lastUserTime)) {
+    console.log("\n暂不需要唤醒\n");
+    return;
+  }
   const now = new Date();
   const diffMinutes = Math.floor((now - lastUserTime) / 1000 / 60);
 
