@@ -316,36 +316,22 @@ ${historyText}`
         console.log("\n未配置 BARK_KEY，本次不发送 Bark\n");
         eventContent = `（${getLocalTimeString()} 自动唤醒：本次未发送 Bark｜原因：Bark Key 未配置）`;
       } else {
-       const barkPayload = {
-  title: safeTitle,
-  body: safeBody,
-  device_key: process.env.BARK_KEY
-};
-// 只有存在图标链接才追加字段
-if (process.env.CUSTOM_ICON_URL && process.env.CUSTOM_ICON_URL.trim()) {
-  barkPayload.icon = process.env.CUSTOM_ICON_URL.trim();
+// 改用GET链接推送，移除POST兼容问题
+const barkUrl = `https://api.day.app/${process.env.BARK_KEY}/${encodeURIComponent(safeTitle)}/${encodeURIComponent(safeBody)}`;
+const barkResponse = await fetch(barkUrl);
+const barkTextResult = await barkResponse.text();
+let barkResult = {};
+try {
+  barkResult = JSON.parse(barkTextResult);
+} catch {}
+console.log("\nBark Result:\n", barkResult || barkTextResult);
+
+if (!barkResponse.ok || (barkResult.code && barkResult.code !== 200)) {
+  const reason = barkResult.message || `HTTP ${barkResponse.status}`;
+  eventContent = `（${getLocalTimeString()} 自动唤醒：本次未发送 Bark｜原因：Bark 推送失败：${reason}）`;
+} else {
+  eventContent = `（${getLocalTimeString()} 刚刚给用户发了 Bark：${safeTitle}｜${safeBody}）`;
 }
-
-        // 发送 Bark 推送
-        const barkResponse = await fetch("https://api.day.app/push", {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify(barkPayload)
-        });
-
-        const barkTextResult = await barkResponse.text();
-        let barkResult = {};
-        try {
-          barkResult = JSON.parse(barkTextResult);
-        } catch {}
-        console.log("\nBark Result:\n", barkResult || barkTextResult);
-
-        if (!barkResponse.ok || (barkResult.code && barkResult.code !== 200)) {
-          const reason = barkResult.message || `HTTP ${barkResponse.status}`;
-          eventContent = `（${getLocalTimeString()} 自动唤醒：本次未发送 Bark｜原因：Bark 推送失败：${reason}）`;
-        } else {
-          eventContent = `（${getLocalTimeString()} 刚刚给用户发了 Bark：${safeTitle}｜${safeBody}）`;
-        }
       }
     }
   }
