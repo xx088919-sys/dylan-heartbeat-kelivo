@@ -82,7 +82,10 @@ function normalizeContentToText(content) {
 }
 
 function normalizeMessageForTimeline(msg) {
-  return { ...msg, content: normalizeContentToText(msg.content) };
+  let newMsg = { ...msg, content: normalizeContentToText(msg.content) };
+  // 自动给每条消息加时间戳
+  if (!newMsg.timestamp) newMsg.timestamp = Date.now();
+  return newMsg;
 }
 
 function prepareMessageForLLM(msg) {
