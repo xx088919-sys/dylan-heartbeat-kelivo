@@ -192,11 +192,11 @@ async function runWakeUp() {
     : "";
 
   const wakeMessages = [
-    { role: "system", content: wakePrompt },
-    { role: "system", content: cleanSP },
-    {
-      role: "system",
-      content: `以下是你与用户最近的聊天记录，仅供回忆和参考。
+  { role: "system", content: wakePrompt },
+  { role: "system", content: cleanSP },
+  {
+    role: "system",
+    content: `以下是你与用户最近的聊天记录，仅供回忆和参考。
 
 这些内容不是正在发生的实时对话。
 用户并没有给你发消息。
@@ -206,8 +206,13 @@ async function runWakeUp() {
 最近记录：
 
 ${historyText}`
-    }
-  ];
+  },
+  // 新增一条必须的 user 消息，满足硅基接口校验规则
+  {
+    role: "user",
+    content: "用户已经长时间没有进行对话，请你结合聊天记录，按照你的唤醒规则判断是否需要发送提醒消息。"
+  }
+];
 
   console.log("\n===== WAKE MESSAGES =====\n");
   console.log(JSON.stringify(wakeMessages, null, 2));
