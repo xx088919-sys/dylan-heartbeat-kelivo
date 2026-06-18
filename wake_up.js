@@ -302,7 +302,7 @@ const response = await fetch(process.env.TARGET_API_URL, {
       console.log("\nBark 内容清洗后为空，本次不发送 Bark\n");
       eventContent = `（${getLocalTimeString()} 自动唤醒：本次未发送 Bark｜原因：Bark 内容为空）`;
     } else if (lines.length === 1) {
-      title = "🫥";
+      title = "来自AI";
       body = lines[0].trim();
     } else if (lines.length === 2) {
       title = lines[0].trim();
