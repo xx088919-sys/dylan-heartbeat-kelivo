@@ -87,17 +87,20 @@ function shouldWake(lastUserTime) {
 function getLastUserTime(messages) {
   const reversed = [...messages].reverse();
   for (const msg of reversed) {
-    if (msg.role === "user") {
-      // 优先取消息自带时间字段，不再解析文本
-      const timeVal = msg.timestamp || msg.time || msg.created_at;
-      if (timeVal) {
-        return new Date(timeVal);
-      }
+    if (msg.role !== "user") continue;
+    const timeVal = msg.timestamp || msg.time || msg.created_at;
+    if (!timeVal) continue;
+    const dateObj = new Date(timeVal);
+    // 校验是否合法日期
+    if (!isNaN(dateObj.getTime())) {
+      return dateObj;
     }
   }
-  // 兜底：实在没有任何时间字段，返回当前时间（避免直接退出）
-  console.log("消息无内置时间字段，使用系统当前时间兜底");
-  return new Date();
+  console.log("消息无合法内置时间字段，兜底：使用120分钟前时间，避免diff=0");
+  // 兜底改为2小时前，不会出现0差值
+  const fallback = new Date();
+  fallback.setMinutes(fallback.getMinutes() - 120);
+  return fallback;
 }
 
 function stripPosition(messages) {
