@@ -367,16 +367,28 @@ function getCheckIntervalMs() {
 }
 
 async function scheduleNextCheck() {
+  const intervalMin = getCheckIntervalMs() / 60000;
+  console.log(`【定时轮询节点】本轮检测开始，预设间隔 ${intervalMin} 分钟`);
   try {
-    // 发送心跳
+    // 发送心跳（增加8秒超时，空捕获会卡死循环）
     try {
-      await fetch(HEARTBEAT_URL, { method: "POST" });
-    } catch {}
+      const hbController = new AbortController();
+      const hbTimeout = setTimeout(() => hbController.abort(), 8000);
+      await fetch(HEARTBEAT_URL, { 
+        method: "POST",
+        signal: hbController.signal
+      }).finally(() => clearTimeout(hbTimeout));
+    } catch (err) {
+      console.log("内部心跳接口请求异常，跳过本轮心跳:", err.message);
+    }
     await runWakeUp();
   } catch (err) {
-    console.error("唤醒检查出错:", err);
+    console.error("唤醒检查整体出错:", err);
   }
-  setTimeout(scheduleNextCheck, getCheckIntervalMs());
+  // 无论成败，强制预约下一轮，杜绝循环断掉
+  const nextDelay = getCheckIntervalMs();
+  console.log(`【定时轮询节点】已预约下一次检测，${nextDelay/60000}分钟后执行`);
+  setTimeout(scheduleNextCheck, nextDelay);
 }
 
 // 潮水记得第一次没过礁石的时间。之后每一次涨落，都是同一片海在确认边界。
