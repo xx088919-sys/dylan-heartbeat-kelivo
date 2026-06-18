@@ -325,7 +325,13 @@ const response = await fetch(process.env.TARGET_API_URL, {
         eventContent = `（${getLocalTimeString()} 自动唤醒：本次未发送 Bark｜原因：Bark Key 未配置）`;
       } else {
 // 改用GET链接推送，移除POST兼容问题
-const barkUrl = `https://api.day.app/${process.env.BARK_KEY}/${encodeURIComponent(safeTitle)}/${encodeURIComponent(safeBody)}`;
+// 拼接自定义图标参数
+let iconSuffix = "";
+if (process.env.CUSTOM_ICON_URL && process.env.CUSTOM_ICON_URL.trim() !== "") {
+  iconSuffix = `?icon=${encodeURIComponent(process.env.CUSTOM_ICON_URL.trim())}`;
+}
+// 拼接带图标的推送地址
+const barkUrl = `https://api.day.app/${process.env.BARK_KEY}/${encodeURIComponent(safeTitle)}/${encodeURIComponent(safeBody)}${iconSuffix}`;
 const barkResponse = await fetch(barkUrl);
 const barkTextResult = await barkResponse.text();
 let barkResult = {};
